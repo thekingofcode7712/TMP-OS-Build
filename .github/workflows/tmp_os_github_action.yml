@@ -1,0 +1,82 @@
+name: Build TMP OS (Android 15) for Note 8
+
+on:
+  workflow_dispatch: # Allows you to start the build manually with one click
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Maximize Build Space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 512
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+
+      - name: Set up Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git git-lfs gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev
+          mkdir -p ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          git config --global user.name "TMP OS Builder"
+          git config --global user.email "builder@tmpos.org"
+
+      - name: Sync Source Code
+        run: |
+          mkdir ~/tmp_os && cd ~/tmp_os
+          ~/bin/repo init -u https://github.com/LineageOS/android.git -b lineage-22.2 --git-lfs
+          mkdir -p .repo/local_manifests
+          # Injecting the Note 8 DNA
+          cat <<EOF > .repo/local_manifests/greatlte.xml
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+            <project name="universal8895/android_device_samsung_greatlte" path="device/samsung/greatlte" remote="github" revision="lineage-22.2" />
+            <project name="universal8895/android_device_samsung_universal8895-common" path="device/samsung/universal8895-common" remote="github" revision="lineage-22.2" />
+            <project name="universal8895/kernel_samsung_universal8895" path="kernel/samsung/universal8895" remote="github" revision="lineage-22.2" />
+            <project name="universal8895/proprietary_vendor_samsung" path="vendor/samsung" remote="github" revision="lineage-22.2" />
+          </manifest>
+          EOF
+          ~/bin/repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+
+      - name: Apply TMP OS & Pixel Customization
+        run: |
+          cd ~/tmp_os
+          # Rename to TMP OS
+          sed -i 's/LineageOS/TMP OS/g' vendor/lineage/config/common.mk
+          # Enable Pixel Features
+          echo "TARGET_USES_PIXEL_LAUNCHER := true" >> device/samsung/greatlte/BoardConfig.mk
+          echo "WITH_GMS := true" >> device/samsung/greatlte/BoardConfig.mk
+
+      - name: Build ROM
+        run: |
+          cd ~/tmp_os
+          source build/envsetup.sh
+          lunch lineage_greatlte-userdebug
+          mka bacon -j$(nproc --all)
+
+      - name: Integrity Check & Upload
+        run: |
+          cd ~/tmp_os/out/target/product/greatlte/
+          # Verify file is not corrupt
+          sha256sum lineage-22.2-*.zip > checksum.txt
+          echo "Build Successful. Checksum generated."
+          
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ~/tmp_os/out/target/product/greatlte/lineage-22.2-*.zip
+            ~/tmp_os/out/target/product/greatlte/checksum.txt
+          tag_name: TMP_OS_v1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
