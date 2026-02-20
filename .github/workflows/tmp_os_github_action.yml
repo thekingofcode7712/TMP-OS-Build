@@ -1,4 +1,4 @@
-name: TMP OS Zero-Error Builder v2.1
+name: TMP OS Rust-Optimized Builder v2.2
 
 on:
   workflow_dispatch:
@@ -10,9 +10,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Hard Disk Cleanup
+      - name: Maximum Disk Purge
         run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/share/swift /usr/local/share/powershell "$AGENT_TOOLSDIRECTORY"
           sudo apt-get clean
           docker rmi $(docker images -q) || true
           df -h
@@ -27,11 +27,11 @@ jobs:
           git config --global user.name "TMP-OS-Bot"
           git config --global user.email "bot@tmpos.org"
 
-      - name: Stable Optimized Sync
+      - name: Rust-Optimized Sync
         run: |
           mkdir ~/tmp_os && cd ~/tmp_os
-          # Removed --filter flag to fix Exit Code 2
-          ~/bin/repo init -u https://github.com/LineageOS/android.git -b lineage-22.2 --depth=1 --git-lfs
+          # Initialize with heavy exclusions to save the Rust checkout
+          ~/bin/repo init -u https://github.com/LineageOS/android.git -b lineage-22.2 --depth=1 --git-lfs -g default,-mips,-x86,-darwin,-notdefault
           
           mkdir -p .repo/local_manifests
           cat <<EOF > .repo/local_manifests/greatlte.xml
@@ -45,10 +45,10 @@ jobs:
           </manifest>
           EOF
           
-          # Stable sync flags
+          # Sync with force-sync to override any partial worktree errors
           ~/bin/repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --current-branch
           
-          # Final cleanup of metadata to ensure build space
+          # Space recovery
           rm -rf .repo/project-objects .repo/projects
 
       - name: Deep Branding & Pixel Integration
@@ -81,7 +81,7 @@ jobs:
         if: success()
         with:
           files: ~/tmp_os/out/target/product/greatlte/lineage-22.2-*.zip
-          tag_name: TMP_OS_v2.1
-          name: TMP OS v2.1 Zero-Error
+          tag_name: TMP_OS_v2.2
+          name: TMP OS v2.2 Rust-Optimized
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
