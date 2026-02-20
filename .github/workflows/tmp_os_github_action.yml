@@ -1,4 +1,4 @@
-name: TMP OS Cloud-Hybrid Builder
+name: TMP OS Single-Stream Builder
 
 on:
   workflow_dispatch:
@@ -27,13 +27,9 @@ jobs:
           git config --global user.name "TMP-OS-Bot"
           git config --global user.email "bot@tmpos.org"
 
-      - name: Hybrid Sync with Heartbeat
+      - name: Single-Stream Sync
         run: |
           mkdir ~/tmp_os && cd ~/tmp_os
-          
-          # Start a background heartbeat to prevent GitHub from timing out
-          (while true; do echo "Syncing in progress... $(date)"; sleep 60; done) &
-          HEARTBEAT_PID=$!
           
           # Initialize with a super-stripped manifest
           ~/bin/repo init -u https://github.com/LineageOS/android.git -b lineage-22.2 --depth=1 --groups=all,-notdefault,-device,-mips,-x86,-darwin
@@ -50,13 +46,17 @@ jobs:
           </manifest>
           EOF
           
-          # Optimized sync with no-tags and current-branch to save data
-          ~/bin/repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --current-branch --optimized-fetch --prune
+          # Single-stream sync with built-in progress to keep connection alive
+          # No background processes, just a robust loop
+          echo "Starting Single-Stream Sync..."
+          for i in {1..5}; do
+            ~/bin/repo sync -c -j1 --force-sync --no-clone-bundle --no-tags --current-branch --optimized-fetch --prune && break || {
+              echo "Sync failed, retrying in 60 seconds (Attempt $i/5)..."
+              sleep 60
+            }
+          done
           
-          # Kill heartbeat after sync
-          kill $HEARTBEAT_PID
-          
-          # Space recovery
+          # Final space recovery before build
           rm -rf .repo/project-objects .repo/projects
 
       - name: Branding & Build
@@ -76,7 +76,7 @@ jobs:
         if: success()
         with:
           files: ~/tmp_os/out/target/product/greatlte/lineage-22.2-*.zip
-          tag_name: TMP_OS_v1.7
-          name: TMP OS v1.7 Hybrid
+          tag_name: TMP_OS_v1.8
+          name: TMP OS v1.8 Single-Stream
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
