@@ -1,4 +1,4 @@
-name: TMP OS Final Master Builder
+name: TMP OS Cloud-Hybrid Builder
 
 on:
   workflow_dispatch:
@@ -27,10 +27,17 @@ jobs:
           git config --global user.name "TMP-OS-Bot"
           git config --global user.email "bot@tmpos.org"
 
-      - name: Master Sync
+      - name: Hybrid Sync with Heartbeat
         run: |
           mkdir ~/tmp_os && cd ~/tmp_os
-          ~/bin/repo init -u https://github.com/LineageOS/android.git -b lineage-22.2 --depth=1
+          
+          # Start a background heartbeat to prevent GitHub from timing out
+          (while true; do echo "Syncing in progress... $(date)"; sleep 60; done) &
+          HEARTBEAT_PID=$!
+          
+          # Initialize with a super-stripped manifest
+          ~/bin/repo init -u https://github.com/LineageOS/android.git -b lineage-22.2 --depth=1 --groups=all,-notdefault,-device,-mips,-x86,-darwin
+          
           mkdir -p .repo/local_manifests
           cat <<EOF > .repo/local_manifests/greatlte.xml
           <?xml version="1.0" encoding="UTF-8"?>
@@ -42,35 +49,24 @@ jobs:
             <project name="proprietary_vendor_samsung" path="vendor/samsung" remote="universal8895" revision="lineage-22.2" />
           </manifest>
           EOF
-          # Robust sync with retry
-          for i in {1..3}; do ~/bin/repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --current-branch && break || sleep 30; done
+          
+          # Optimized sync with no-tags and current-branch to save data
+          ~/bin/repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --current-branch --optimized-fetch --prune
+          
+          # Kill heartbeat after sync
+          kill $HEARTBEAT_PID
+          
+          # Space recovery
+          rm -rf .repo/project-objects .repo/projects
 
-      - name: Smart Branding & Customization
+      - name: Branding & Build
         run: |
           cd ~/tmp_os
-          # Only attempt branding if the vendor folder exists
           if [ -d "vendor/lineage" ]; then
-            echo "Applying TMP OS branding..."
             find vendor/lineage -type f -name "*.mk" -exec sed -i 's/LineageOS/TMP OS/g' {} +
-          else
-            echo "Warning: vendor/lineage not found, skipping deep branding."
           fi
           
-          # Force Pixel Features in the device tree
-          if [ -d "device/samsung/greatlte" ]; then
-            echo "Enabling Pixel Experience features..."
-            {
-              echo "TARGET_USES_PIXEL_LAUNCHER := true"
-              echo "WITH_GMS := true"
-              echo "TARGET_GAPPS_ARCH := arm64"
-            } >> device/samsung/greatlte/BoardConfig.mk
-          fi
-
-      - name: Build ROM
-        run: |
-          cd ~/tmp_os
           source build/envsetup.sh
-          # Check if lunch command exists for greatlte
           lunch lineage_greatlte-userdebug || lunch lineage_greatlte-eng
           export ALLOW_MISSING_DEPENDENCIES=true
           mka bacon -j$(nproc --all)
@@ -80,7 +76,7 @@ jobs:
         if: success()
         with:
           files: ~/tmp_os/out/target/product/greatlte/lineage-22.2-*.zip
-          tag_name: TMP_OS_v1.6
-          name: TMP OS v1.6 Master
+          tag_name: TMP_OS_v1.7
+          name: TMP OS v1.7 Hybrid
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
