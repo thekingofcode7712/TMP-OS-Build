@@ -1,4 +1,4 @@
-name: TMP OS Turbo-Sync Builder v2.0
+name: TMP OS Zero-Error Builder v2.1
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Turbo Disk Cleanup
+      - name: Hard Disk Cleanup
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           sudo apt-get clean
@@ -27,11 +27,11 @@ jobs:
           git config --global user.name "TMP-OS-Bot"
           git config --global user.email "bot@tmpos.org"
 
-      - name: Turbo-Sync (Fast & Slim)
+      - name: Stable Optimized Sync
         run: |
           mkdir ~/tmp_os && cd ~/tmp_os
-          # Using --filter=blob:none to skip historical data, massively speeding up sync
-          ~/bin/repo init -u https://github.com/LineageOS/android.git -b lineage-22.2 --depth=1 --git-lfs --filter=blob:none
+          # Removed --filter flag to fix Exit Code 2
+          ~/bin/repo init -u https://github.com/LineageOS/android.git -b lineage-22.2 --depth=1 --git-lfs
           
           mkdir -p .repo/local_manifests
           cat <<EOF > .repo/local_manifests/greatlte.xml
@@ -45,23 +45,21 @@ jobs:
           </manifest>
           EOF
           
-          # Parallel sync with current-branch only
+          # Stable sync flags
           ~/bin/repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --current-branch
           
-          # Manual verification of hardware trees (Fail-safe)
-          [ -d "device/samsung/greatlte" ] || git clone --depth=1 https://github.com/universal8895/android_device_samsung_greatlte -b lineage-22.2 device/samsung/greatlte
+          # Final cleanup of metadata to ensure build space
+          rm -rf .repo/project-objects .repo/projects
 
       - name: Deep Branding & Pixel Integration
         run: |
           cd ~/tmp_os
-          # Rename OS to TMP OS
           if [ -d "vendor/lineage" ]; then
             find vendor/lineage -type f -name "*.mk" -exec sed -i 's/LineageOS/TMP OS/g' {} +
           fi
           
-          # Force Pixel Launcher and GApps in Note 8 config
           if [ -f "device/samsung/greatlte/lineage_greatlte.mk" ]; then
-            echo "Enabling Pixel Experience..."
+            echo "Injecting Pixel Experience..."
             sed -i '/inherit-product/a \$(call inherit-product, vendor/lineage/config/common_full_phone.mk)' device/samsung/greatlte/lineage_greatlte.mk
             {
               echo "TARGET_USES_PIXEL_LAUNCHER := true"
@@ -83,7 +81,7 @@ jobs:
         if: success()
         with:
           files: ~/tmp_os/out/target/product/greatlte/lineage-22.2-*.zip
-          tag_name: TMP_OS_v2.0
-          name: TMP OS v2.0 Turbo-Sync
+          tag_name: TMP_OS_v2.1
+          name: TMP OS v2.1 Zero-Error
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
