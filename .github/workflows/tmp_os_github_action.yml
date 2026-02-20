@@ -1,4 +1,4 @@
-name: TMP OS Manual Optimized Builder
+name: TMP OS Bulletproof Builder
 
 on:
   workflow_dispatch:
@@ -12,19 +12,9 @@ jobs:
 
       - name: Manual Disk Cleanup
         run: |
-          echo "Starting disk cleanup..."
-          df -h
-          # Remove heavy pre-installed software
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-          # Clean apt cache
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           sudo apt-get clean
-          # Prune Docker
           docker rmi $(docker images -q) || true
-          echo "Cleanup complete. Available space:"
           df -h
 
       - name: Install Build Tools
@@ -37,7 +27,7 @@ jobs:
           git config --global user.name "TMP-OS-Bot"
           git config --global user.email "bot@tmpos.org"
 
-      - name: Sync & Purge Repo
+      - name: Robust Sync
         run: |
           mkdir ~/tmp_os && cd ~/tmp_os
           ~/bin/repo init -u https://github.com/LineageOS/android.git -b lineage-22.2 --depth=1
@@ -45,22 +35,22 @@ jobs:
           cat <<EOF > .repo/local_manifests/greatlte.xml
           <?xml version="1.0" encoding="UTF-8"?>
           <manifest>
-            <project name="universal8895/android_device_samsung_greatlte" path="device/samsung/greatlte" remote="github" revision="lineage-22.2" />
-            <project name="universal8895/android_device_samsung_universal8895-common" path="device/samsung/universal8895-common" remote="github" revision="lineage-22.2" />
-            <project name="universal8895/kernel_samsung_universal8895" path="kernel/samsung/universal8895" remote="github" revision="lineage-22.2" />
-            <project name="universal8895/proprietary_vendor_samsung" path="vendor/samsung" remote="github" revision="lineage-22.2" />
+            <remote name="universal8895" fetch="https://github.com/universal8895/" />
+            <project name="android_device_samsung_greatlte" path="device/samsung/greatlte" remote="universal8895" revision="lineage-22.2" />
+            <project name="android_device_samsung_universal8895-common" path="device/samsung/universal8895-common" remote="universal8895" revision="lineage-22.2" />
+            <project name="kernel_samsung_universal8895" path="kernel/samsung/universal8895" remote="universal8895" revision="lineage-22.2" />
+            <project name="proprietary_vendor_samsung" path="vendor/samsung" remote="universal8895" revision="lineage-22.2" />
           </manifest>
           EOF
-          ~/bin/repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --depth=1
-          # Free up space by removing the repo history after sync
-          rm -rf .repo
+          # Retry logic for sync to avoid Error Code 2
+          for i in {1..3}; do ~/bin/repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --depth=1 && break || sleep 30; done
+          # Cleanup to save space
+          rm -rf .repo/project-objects .repo/projects
 
       - name: Branding & Build
         run: |
           cd ~/tmp_os
-          # Deep Branding
           find vendor/lineage -type f -name "*.mk" -exec sed -i 's/LineageOS/TMP OS/g' {} +
-          # Build
           source build/envsetup.sh
           lunch lineage_greatlte-userdebug
           export ALLOW_MISSING_DEPENDENCIES=true
@@ -71,7 +61,7 @@ jobs:
         if: success()
         with:
           files: ~/tmp_os/out/target/product/greatlte/lineage-22.2-*.zip
-          tag_name: TMP_OS_v1.3
-          name: TMP OS v1.3 Manual Optimized
+          tag_name: TMP_OS_v1.4
+          name: TMP OS v1.4 Bulletproof
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
